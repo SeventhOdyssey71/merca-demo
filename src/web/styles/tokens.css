@@ -1,0 +1,68 @@
+:root {
+  /* Type families */
+  --font-sans: 'Google Sans', 'Google Sans Text', 'Inter', system-ui, -apple-system,
+    'Segoe UI', sans-serif;
+  --font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Type scale */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 22px;
+  --fs-2xl: 32px;
+  --fs-3xl: 48px;
+  --lh-tight: 1.18;
+  --lh-body: 1.55;
+
+  /* Colors — minimal palette, high-contrast on paper */
+  --ink: #0c1827;
+  --ink-soft: #3a4a5e;
+  --ink-faint: #768193;
+  --paper: #fafaf7;
+  --paper-2: #f1efe8;
+  --rule: #e6e3dc;
+  --code-bg: #f4f1ea;
+  --live: #1f7a4d;
+  --warn: #a25b16;
+
+  /* Spacing — 4-based */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-8: 48px;
+  --sp-10: 64px;
+  --sp-12: 96px;
+
+  /* Radii */
+  --r-sm: 4px;
+  --r-md: 6px;
+
+  /* Layout */
+  --max-w: 100%;
+  --max-w-prose: 720px;
+  --gutter: clamp(16px, 4vw, 64px);
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --t-fast: 140ms;
+  --t-mid: 240ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f1efe8;
+    --ink-soft: #b9c0cc;
+    --ink-faint: #7c8595;
+    --paper: #0c1827;
+    --paper-2: #142233;
+    --rule: #1f2c3e;
+    --code-bg: #142233;
+    --live: #5fb98a;
+    --warn: #d18a3b;
+  }
+}

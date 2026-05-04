@@ -1,0 +1,41 @@
+{
+  "name": "merca-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Developer integration demo for merca.earth — an onchain land protocol on Sui.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "read:market": "tsx scripts/read-market.ts",
+    "read:parcel": "tsx scripts/read-parcel.ts",
+    "read:viewport": "tsx scripts/viewport-query.ts",
+    "read:activity": "tsx scripts/recent-activity.ts",
+    "quote": "tsx scripts/quote-price.ts",
+    "tx:build-mark": "tsx scripts/build-mark-tx.ts",
+    "tx:sign-mark": "tsx scripts/sign-mark-tx.ts"
+  },
+  "dependencies": {
+    "@mysten/sui": "^1.21.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "dotenv": "^16.4.5",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4",
+    "vitest": "^2.0.4"
+  },
+  "engines": {
+    "node": ">=18.18"
+  }
+}
