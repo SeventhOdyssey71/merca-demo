@@ -9,6 +9,7 @@ import 'dotenv/config';
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import {
+  DEFAULT_GAS_BUDGET_MIST,
   buildMarkTx,
   findParcelLevel,
   getClient,
@@ -42,6 +43,8 @@ await exitOnError(
     const amountMist = parseSui(amtArg ?? '0.001');
     const tx = buildMarkTx({ polygonId: idArg, level, markType: 1, amountMist });
     tx.setSender(sender);
+    // Skip the SDK's auto-budget dry-run — surfaces real Move aborts cleanly.
+    tx.setGasBudget(DEFAULT_GAS_BUDGET_MIST);
 
     console.log(bold(`signing as ${sender}`));
     const exec = await getClient().signAndExecuteTransaction({

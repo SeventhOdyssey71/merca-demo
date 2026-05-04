@@ -267,6 +267,44 @@
   word-break: break-word;
 }
 
+/* Decoded Move abort card */
+.abort {
+  border-left: 2px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 6%, transparent);
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.abort .abort-name {
+  font-size: var(--fs-sm);
+  color: var(--ink);
+}
+.abort .abort-name code {
+  font-size: var(--fs-sm);
+  color: var(--warn);
+  background: transparent;
+  padding: 0;
+}
+.abort .abort-hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+}
+.abort pre {
+  margin: 0;
+  background: var(--code-bg);
+  border-radius: var(--r-sm);
+  padding: var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Form rows */
 .field {
   display: flex;

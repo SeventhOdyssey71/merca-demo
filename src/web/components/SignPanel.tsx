@@ -3,6 +3,8 @@ import { Transaction } from '@mysten/sui/transactions';
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { getClient } from '@merca/client';
+import { decodeMoveAbort } from '@merca/errors';
+import { DEFAULT_GAS_BUDGET_MIST } from '@merca/tx';
 import { CodeBlock } from './CodeBlock.js';
 import { Tag } from './Tag.js';
 import { shortAddr } from '@merca/format';
@@ -36,6 +38,10 @@ export function SignPanel({ buildTx }: { buildTx: () => Transaction }) {
 
       const tx = buildTx();
       tx.setSender(address);
+      // Set an explicit gas budget so the SDK skips its internal estimation
+      // dry-run. If the PTB itself aborts, signAndExecute will surface the
+      // real Move abort instead of "could not automatically determine a budget".
+      tx.setGasBudget(DEFAULT_GAS_BUDGET_MIST);
 
       const exec = await getClient().signAndExecuteTransaction({
         signer: kp,
@@ -111,7 +117,34 @@ export function SignPanel({ buildTx }: { buildTx: () => Transaction }) {
           </div>
         </div>
 
-        {err && <pre style={{ color: 'var(--warn)' }}>{err}</pre>}
+        {err && (() => {
+          const decoded = decodeMoveAbort(err);
+          if (!decoded) return <pre style={{ color: 'var(--warn)' }}>{err}</pre>;
+          return (
+            <div className="abort">
+              <span className="abort-name">
+                <code>
+                  {decoded.module}::{decoded.name}
+                </code>{' '}
+                <span className="muted">({decoded.code})</span>
+                {decoded.function && (
+                  <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
+                    aborted in <code>{decoded.module}::{decoded.function}</code>
+                  </span>
+                )}
+              </span>
+              <p className="abort-hint">{decoded.hint}</p>
+              <details>
+                <summary
+                  style={{ cursor: 'pointer', fontSize: 12, color: 'var(--ink-soft)' }}
+                >
+                  raw error
+                </summary>
+                <pre style={{ marginTop: 6 }}>{err}</pre>
+              </details>
+            </div>
+          );
+        })()}
 
         {result && (
           <div className="col">

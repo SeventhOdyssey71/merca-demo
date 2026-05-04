@@ -1,5 +1,6 @@
 import type { DryRunSummary } from '@merca/types';
 import { formatSui } from '@merca/format';
+import { decodeMoveAbort } from '@merca/errors';
 import { Tag } from './Tag.js';
 
 export function DryRunPanel({ result }: { result: DryRunSummary | null }) {
@@ -17,6 +18,8 @@ export function DryRunPanel({ result }: { result: DryRunSummary | null }) {
       </div>
     );
   }
+
+  const decoded = result.error ? decodeMoveAbort(result.error) : null;
 
   return (
     <div className="dryrun">
@@ -36,9 +39,26 @@ export function DryRunPanel({ result }: { result: DryRunSummary | null }) {
         </div>
       </div>
 
-      {result.error && (
-        <pre style={{ color: 'var(--warn)' }}>{result.error}</pre>
+      {decoded && (
+        <div className="abort">
+          <div className="row-h">
+            <span className="abort-name">
+              <code>
+                {decoded.module}::{decoded.name}
+              </code>{' '}
+              <span className="muted">({decoded.code})</span>
+            </span>
+            {decoded.function && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                aborted in <code>{decoded.module}::{decoded.function}</code>
+              </span>
+            )}
+          </div>
+          <p className="abort-hint">{decoded.hint}</p>
+        </div>
       )}
+
+      {result.error && !decoded && <pre style={{ color: 'var(--warn)' }}>{result.error}</pre>}
 
       {result.events.length > 0 && (
         <details>
@@ -46,6 +66,15 @@ export function DryRunPanel({ result }: { result: DryRunSummary | null }) {
             event payloads
           </summary>
           <pre>{stringify(result.events)}</pre>
+        </details>
+      )}
+
+      {result.error && decoded && (
+        <details>
+          <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--ink-soft)' }}>
+            raw error
+          </summary>
+          <pre>{result.error}</pre>
         </details>
       )}
 

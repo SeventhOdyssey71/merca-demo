@@ -7,3 +7,4 @@ export * from './market.js';
 export * from './parcels.js';
 export * from './activity.js';
 export * from './tx.js';
+export * from './errors.js';

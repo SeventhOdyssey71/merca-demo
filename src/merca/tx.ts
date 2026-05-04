@@ -12,6 +12,19 @@ import type { DryRunSummary } from './types.js';
 
 const ZERO = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
+/**
+ * Default gas budget for sign-and-execute paths, in MIST (0.05 SUI).
+ *
+ * Setting an explicit budget lets the SDK skip its internal gas-estimation
+ * dry-run, which can fail with the same Move abort as the user's PTB and
+ * surface as a confusing "Dry run failed, could not automatically determine
+ * a budget: …" instead of the underlying error.
+ *
+ * 50_000_000 MIST is comfortable for any single Move call in this protocol;
+ * unused gas is refunded.
+ */
+export const DEFAULT_GAS_BUDGET_MIST = 50_000_000n;
+
 /* ── PTB builders ────────────────────────────────────────────────────────── */
 
 /**

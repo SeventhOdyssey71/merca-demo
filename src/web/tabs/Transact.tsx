@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Section } from '../components/Section.js';
 import { CodeBlock } from '../components/CodeBlock.js';
 import { Tag } from '../components/Tag.js';
@@ -10,6 +10,7 @@ import {
   buildMarkTx,
   dryRun,
 } from '@merca/tx';
+import { findParcelLevel } from '@merca/parcels';
 import type { LevelKey } from '@merca/constants';
 import {
   LEVELS,
@@ -21,6 +22,7 @@ import type { DryRunSummary } from '@merca/types';
 import { parseSui } from '@merca/format';
 
 const BLOCK_INDEX = LEVELS.find((l) => l.key === 'block')!;
+type DetectStatus = 'idle' | 'detecting' | 'found' | 'not-found';
 
 type Action = 'mark' | 'bump' | 'buy';
 
@@ -113,11 +115,49 @@ export function Transact() {
   const [action, setAction] = useState<Action>('mark');
   const [polygonId, setPolygonId] = useState('');
   const [level, setLevel] = useState<LevelKey>('block');
+  const [levelTouched, setLevelTouched] = useState(false);
+  const [detect, setDetect] = useState<DetectStatus>('idle');
+  const lastDetected = useRef<string>('');
   const [amountSui, setAmountSui] = useState('0.001');
   const [sender, setSender] = useState(SAMPLE_SENDER);
   const [dry, setDry] = useState<DryRunSummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Debounced auto-detect: when the user pastes a well-formed polygon ID,
+  // search every level until we find which one hosts it. If the user has
+  // manually picked a level (`levelTouched`), don't override their choice.
+  useEffect(() => {
+    const id = polygonId.trim();
+    const wellFormed = /^0x[0-9a-fA-F]{64}$/.test(id);
+    if (!wellFormed) {
+      setDetect('idle');
+      return;
+    }
+    if (id === lastDetected.current) return;
+
+    let cancelled = false;
+    setDetect('detecting');
+    const t = setTimeout(async () => {
+      try {
+        const found = await findParcelLevel(id);
+        if (cancelled) return;
+        lastDetected.current = id;
+        if (found) {
+          setDetect('found');
+          if (!levelTouched) setLevel(found);
+        } else {
+          setDetect('not-found');
+        }
+      } catch {
+        if (!cancelled) setDetect('not-found');
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [polygonId, levelTouched]);
 
   const buildTx = () => {
     const amountMist = parseSui(amountSui);
@@ -186,7 +226,12 @@ export function Transact() {
               id="pid"
               placeholder="0x…"
               value={polygonId}
-              onChange={(e) => setPolygonId(e.target.value)}
+              onChange={(e) => {
+                setPolygonId(e.target.value);
+                // A new ID means the previous "manually picked" level no longer
+                // applies — re-enable auto-detect so we can refit the level.
+                setLevelTouched(false);
+              }}
             />
             <span className="hint">
               Browse the{' '}
@@ -200,7 +245,14 @@ export function Transact() {
             <label className="label" htmlFor="lvl">
               level
             </label>
-            <select id="lvl" value={level} onChange={(e) => setLevel(e.target.value as LevelKey)}>
+            <select
+              id="lvl"
+              value={level}
+              onChange={(e) => {
+                setLevel(e.target.value as LevelKey);
+                setLevelTouched(true);
+              }}
+            >
               {LEVELS.map((l) => (
                 <option key={l.key} value={l.key}>
                   {l.label}
@@ -208,7 +260,34 @@ export function Transact() {
               ))}
             </select>
             <span className="hint">
-              Match the level the parcel was registered at. Wrong level → call aborts.
+              {detect === 'detecting' && <>detecting level for this parcel…</>}
+              {detect === 'found' && !levelTouched && (
+                <>
+                  auto-detected · <strong>{level}</strong>{' '}
+                  <a
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setLevelTouched(true);
+                    }}
+                    href="#"
+                    style={{ marginLeft: 6 }}
+                  >
+                    override
+                  </a>
+                </>
+              )}
+              {detect === 'found' && levelTouched && (
+                <>using your selected level</>
+              )}
+              {detect === 'not-found' && (
+                <>
+                  parcel not found in any index — double-check the ID, then pick a level
+                  manually.
+                </>
+              )}
+              {detect === 'idle' && (
+                <>Match the level the parcel was registered at. Wrong level → call aborts.</>
+              )}
             </span>
           </div>
           <div className="field">
@@ -246,8 +325,16 @@ export function Transact() {
         </div>
 
         <div className="row" style={{ marginTop: 16, gap: 12 }}>
-          <button className="primary" onClick={onDryRun} disabled={busy}>
-            {busy ? 'simulating…' : 'Dry-run'}
+          <button
+            className="primary"
+            onClick={onDryRun}
+            disabled={busy || detect === 'detecting'}
+          >
+            {busy
+              ? 'simulating…'
+              : detect === 'detecting'
+                ? 'detecting level…'
+                : 'Dry-run'}
           </button>
           <Tag>{action === 'mark' ? 'safe to sign live' : 'dry-run only'}</Tag>
         </div>
