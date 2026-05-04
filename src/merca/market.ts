@@ -136,6 +136,69 @@ export async function readParcelMarketState(
   };
 }
 
+/* ── Polygon owner lookup ────────────────────────────────────────────────── */
+
+/**
+ * Cache: index object ID → its `polygons` table inner UID.
+ * The mapping is permanent for a given Index, so one read per level is enough.
+ */
+const POLYGONS_TABLE_ID = new Map<string, string>();
+
+async function polygonsTableId(indexId: string, client: SuiClient): Promise<string> {
+  const cached = POLYGONS_TABLE_ID.get(indexId);
+  if (cached) return cached;
+  const obj = await client.getObject({ id: indexId, options: { showContent: true } });
+  const content = obj.data?.content;
+  if (!content || content.dataType !== 'moveObject') {
+    throw new Error(`index ${indexId} has no readable content`);
+  }
+  // SDK content is loosely typed; the path is index.fields.polygons.fields.id.id
+  const fields = (content as { fields: Record<string, unknown> }).fields;
+  const polygons = fields.polygons as { fields?: { id?: { id?: string } } } | undefined;
+  const id = polygons?.fields?.id?.id;
+  if (!id) throw new Error(`could not locate polygons table on index ${indexId}`);
+  POLYGONS_TABLE_ID.set(indexId, id);
+  return id;
+}
+
+/**
+ * Read the parcel's stored `Polygon` struct via dynamic-field traversal.
+ * Returns the owner address and a few useful metadata fields, or `null` if
+ * the parcel isn't in this index.
+ */
+export async function readParcelOwner(
+  polygonId: string,
+  level: LevelKey,
+  client: SuiClient = getClient(),
+): Promise<{ owner: string; createdEpoch: bigint; partCount: number } | null> {
+  const lvl = LEVELS.find((l) => l.key === level);
+  if (!lvl) throw new Error(`unknown level: ${level}`);
+  const tableId = await polygonsTableId(lvl.indexId, client);
+
+  let df;
+  try {
+    df = await client.getDynamicFieldObject({
+      parentId: tableId,
+      name: { type: '0x2::object::ID', value: polygonId },
+    });
+  } catch {
+    return null;
+  }
+  const content = df.data?.content;
+  if (!content || content.dataType !== 'moveObject') return null;
+
+  const fields = (content as { fields: Record<string, unknown> }).fields;
+  const value = fields.value as { fields?: Record<string, unknown> } | undefined;
+  const polyFields = value?.fields ?? {};
+  const owner = polyFields.owner as string | undefined;
+  if (!owner) return null;
+  return {
+    owner,
+    createdEpoch: BigInt((polyFields.created_epoch as string | undefined) ?? '0'),
+    partCount: Number(polyFields.part_count ?? 0),
+  };
+}
+
 /**
  * Quote all three on-chain prices for a parcel in one devInspect roundtrip:
  * the current buyout, the bump cost, and the drop cost. Eliminates the

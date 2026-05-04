@@ -329,6 +329,27 @@
   background: color-mix(in srgb, var(--live) 6%, transparent);
 }
 
+/* Parcel info strip — surfaces owner + quotes above the action tabs */
+.parcel-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-5);
+  align-items: baseline;
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+  font-size: var(--fs-sm);
+}
+.parcel-strip .label-inline {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  margin-right: 4px;
+}
+
 /* Tabs in Transact */
 .action-tabs {
   display: flex;

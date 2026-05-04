@@ -11,7 +11,7 @@ import {
   dryRun,
 } from '@merca/tx';
 import { findParcelLevel } from '@merca/parcels';
-import { quoteAllPrices } from '@merca/market';
+import { quoteAllPrices, readParcelOwner } from '@merca/market';
 import type { LevelKey } from '@merca/constants';
 import {
   LEVELS,
@@ -20,7 +20,7 @@ import {
   MERCATR_MARKET_PKG,
 } from '@merca/constants';
 import type { DryRunSummary } from '@merca/types';
-import { formatSui, parseSui } from '@merca/format';
+import { formatSui, parseSui, shortAddr } from '@merca/format';
 
 const BLOCK_INDEX = LEVELS.find((l) => l.key === 'block')!;
 type DetectStatus = 'idle' | 'detecting' | 'found' | 'not-found';
@@ -140,8 +140,10 @@ export function Transact() {
   const [err, setErr] = useState<string | null>(null);
 
   const [quotes, setQuotes] = useState<Quotes | null>(null);
+  const [owner, setOwner] = useState<string | null>(null);
   const quotedFor = useRef<{ id: string; level: LevelKey } | null>(null);
   const amountTouched = useRef(false);
+  const senderTouched = useRef(false);
 
   // Debounced auto-detect: when the user pastes a well-formed polygon ID,
   // search every level until we find which one hosts it. If the user has
@@ -178,12 +180,14 @@ export function Transact() {
     };
   }, [polygonId, levelTouched]);
 
-  // Once the level is settled, fetch all three on-chain quotes in one
-  // devInspect — current_price, quote_bump_cost, quote_drop_cost. This
-  // eliminates EInsufficientPayment on buy_full / bump_price / drop_price.
+  // Once the level is settled, fetch the on-chain quotes AND the parcel's
+  // current owner in parallel. The quotes eliminate EInsufficientPayment;
+  // the owner eliminates ENotOwner by letting us pre-fill the sender field
+  // for owner-gated calls (bump_price, drop_price).
   useEffect(() => {
     if (detect !== 'found') {
       setQuotes(null);
+      setOwner(null);
       return;
     }
     const id = polygonId.trim();
@@ -199,18 +203,32 @@ export function Transact() {
     let cancelled = false;
     (async () => {
       try {
-        const q = await quoteAllPrices(id, level);
+        const [q, o] = await Promise.all([
+          quoteAllPrices(id, level),
+          readParcelOwner(id, level).catch(() => null),
+        ]);
         if (cancelled) return;
         setQuotes(q);
+        setOwner(o?.owner ?? null);
         quotedFor.current = { id, level };
       } catch {
-        if (!cancelled) setQuotes(null);
+        if (cancelled) return;
+        setQuotes(null);
+        setOwner(null);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [detect, polygonId, level]);
+
+  // For owner-gated actions (bump_price), auto-fill the sender field with
+  // the parcel's actual owner. The user can still override.
+  useEffect(() => {
+    if (!owner || senderTouched.current) return;
+    if (action === 'bump') setSender(owner);
+    else setSender(SAMPLE_SENDER);
+  }, [action, owner]);
 
   // Auto-fill the amount field whenever quotes refresh or the action changes —
   // unless the user manually edited the amount. Adds a tiny headroom buffer
@@ -269,6 +287,41 @@ export function Transact() {
         }
         blurb="Pick an action and a parcel. We build a real PTB and run it through devInspect. No funds, no signature — until you opt in to the mark flow."
       >
+        {(owner || quotes) && (
+          <div className="parcel-strip">
+            {owner && (
+              <span>
+                <span className="label-inline">owner</span>{' '}
+                <a
+                  href={`https://suiscan.xyz/mainnet/account/${owner}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mono"
+                  title={owner}
+                >
+                  {shortAddr(owner, 8, 6)}
+                </a>
+              </span>
+            )}
+            {quotes && (
+              <>
+                <span>
+                  <span className="label-inline">buyout</span>{' '}
+                  <span className="mono">{formatSui(quotes.buyMist, 6)} SUI</span>
+                </span>
+                <span>
+                  <span className="label-inline">bump cost</span>{' '}
+                  <span className="mono">{formatSui(quotes.bumpMist, 6)} SUI</span>
+                </span>
+                <span>
+                  <span className="label-inline">drop cost</span>{' '}
+                  <span className="mono">{formatSui(quotes.dropMist, 6)} SUI</span>
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
         <div className="action-tabs">
           <button
             className={action === 'mark' ? 'active' : ''}
@@ -305,6 +358,7 @@ export function Transact() {
                 // applies — re-enable auto-detect so we can refit the level.
                 setLevelTouched(false);
                 amountTouched.current = false;
+                senderTouched.current = false;
               }}
             />
             <span className="hint">
@@ -404,13 +458,36 @@ export function Transact() {
               id="sender"
               placeholder="0x…"
               value={sender}
-              onChange={(e) => setSender(e.target.value)}
+              onChange={(e) => {
+                setSender(e.target.value);
+                senderTouched.current = true;
+              }}
             />
             <span className="hint">
-              {action === 'bump' ? (
+              {action === 'bump' && owner && sender === owner ? (
                 <>
-                  <strong>Owner-gated.</strong> Paste the parcel's current owner address —
-                  any other sender aborts with <code>market::ENotOwner (3110)</code>.
+                  auto-filled with the parcel's <strong>current owner</strong> · this is the
+                  only address that can <code>bump_price</code>.
+                </>
+              ) : action === 'bump' && owner ? (
+                <>
+                  Owner-gated. Current owner is{' '}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSender(owner);
+                      senderTouched.current = false;
+                    }}
+                  >
+                    {shortAddr(owner, 8, 6)}
+                  </a>{' '}
+                  — click to set as sender.
+                </>
+              ) : action === 'bump' ? (
+                <>
+                  Owner-gated. Owner not yet loaded — paste the parcel's owner address or
+                  expect <code>market::ENotOwner (3110)</code>.
                 </>
               ) : (
                 <>For owner-gated calls (bump_price, drop_price), use the parcel's owner.</>
