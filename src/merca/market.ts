@@ -136,6 +136,48 @@ export async function readParcelMarketState(
   };
 }
 
+/**
+ * Quote all three on-chain prices for a parcel in one devInspect roundtrip:
+ * the current buyout, the bump cost, and the drop cost. Eliminates the
+ * `EInsufficientPayment` (3109) class of errors — UI can prefill the exact
+ * amount each transaction needs.
+ */
+export async function quoteAllPrices(
+  polygonId: string,
+  level: LevelKey,
+  client: SuiClient = getClient(),
+): Promise<{ buyMist: bigint; bumpMist: bigint; dropMist: bigint }> {
+  const lvl = LEVELS.find((l) => l.key === level);
+  if (!lvl) throw new Error(`unknown level: ${level}`);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${MERCATR_MARKET_PKG}::trading::current_price`,
+    arguments: [tx.object(MARKET_ID), tx.object(lvl.indexId), tx.pure.id(polygonId)],
+  });
+  tx.moveCall({
+    target: `${MERCATR_MARKET_PKG}::trading::quote_bump_cost`,
+    arguments: [tx.object(MARKET_ID), tx.object(lvl.indexId), tx.pure.id(polygonId)],
+  });
+  tx.moveCall({
+    target: `${MERCATR_MARKET_PKG}::trading::quote_drop_cost`,
+    arguments: [tx.object(MARKET_ID), tx.object(lvl.indexId), tx.pure.id(polygonId)],
+  });
+
+  const res = await client.devInspectTransactionBlock({
+    transactionBlock: tx,
+    sender: READ_SENDER,
+  });
+  if (res.error) throw new Error(`price quote failed: ${res.error}`);
+
+  const r = res.results ?? [];
+  return {
+    buyMist: decodeU64(r[0]?.returnValues?.[0]?.[0]),
+    bumpMist: decodeU64(r[1]?.returnValues?.[0]?.[0]),
+    dropMist: decodeU64(r[2]?.returnValues?.[0]?.[0]),
+  };
+}
+
 /* ── BCS decoders ────────────────────────────────────────────────────────── */
 
 function toBytes(input: number[] | Uint8Array | undefined): Uint8Array {

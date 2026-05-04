@@ -11,6 +11,7 @@ import {
   dryRun,
 } from '@merca/tx';
 import { findParcelLevel } from '@merca/parcels';
+import { quoteAllPrices } from '@merca/market';
 import type { LevelKey } from '@merca/constants';
 import {
   LEVELS,
@@ -19,10 +20,24 @@ import {
   MERCATR_MARKET_PKG,
 } from '@merca/constants';
 import type { DryRunSummary } from '@merca/types';
-import { parseSui } from '@merca/format';
+import { formatSui, parseSui } from '@merca/format';
 
 const BLOCK_INDEX = LEVELS.find((l) => l.key === 'block')!;
 type DetectStatus = 'idle' | 'detecting' | 'found' | 'not-found';
+
+interface Quotes {
+  buyMist: bigint;
+  bumpMist: bigint;
+  dropMist: bigint;
+}
+
+const MARK_DEFAULT_SUI = '0.001';
+/** Pad buy_full / bump_price by 0.5% so a tick of premium movement between
+ *  quote-time and execution-time doesn't trip EInsufficientPayment. The
+ *  unspent change is merged back into the gas coin. */
+function withHeadroom(mist: bigint, bps = 50n): bigint {
+  return mist + (mist * bps) / 10_000n;
+}
 
 type Action = 'mark' | 'bump' | 'buy';
 
@@ -124,6 +139,10 @@ export function Transact() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const [quotes, setQuotes] = useState<Quotes | null>(null);
+  const quotedFor = useRef<{ id: string; level: LevelKey } | null>(null);
+  const amountTouched = useRef(false);
+
   // Debounced auto-detect: when the user pastes a well-formed polygon ID,
   // search every level until we find which one hosts it. If the user has
   // manually picked a level (`levelTouched`), don't override their choice.
@@ -158,6 +177,60 @@ export function Transact() {
       clearTimeout(t);
     };
   }, [polygonId, levelTouched]);
+
+  // Once the level is settled, fetch all three on-chain quotes in one
+  // devInspect — current_price, quote_bump_cost, quote_drop_cost. This
+  // eliminates EInsufficientPayment on buy_full / bump_price / drop_price.
+  useEffect(() => {
+    if (detect !== 'found') {
+      setQuotes(null);
+      return;
+    }
+    const id = polygonId.trim();
+    if (!id) return;
+    if (
+      quotedFor.current &&
+      quotedFor.current.id === id &&
+      quotedFor.current.level === level
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const q = await quoteAllPrices(id, level);
+        if (cancelled) return;
+        setQuotes(q);
+        quotedFor.current = { id, level };
+      } catch {
+        if (!cancelled) setQuotes(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detect, polygonId, level]);
+
+  // Auto-fill the amount field whenever quotes refresh or the action changes —
+  // unless the user manually edited the amount. Adds a tiny headroom buffer
+  // for buy/bump (price can drift; the leftover refunds to gas).
+  useEffect(() => {
+    if (!quotes) return;
+    if (amountTouched.current) return;
+    const target =
+      action === 'mark'
+        ? MARK_DEFAULT_SUI
+        : action === 'bump'
+          ? formatSui(withHeadroom(quotes.bumpMist), 9)
+          : action === 'buy'
+            ? formatSui(withHeadroom(quotes.buyMist), 9)
+            : amountSui;
+    setAmountSui(target);
+    // amountSui intentionally omitted from deps — we don't want to re-fire
+    // on our own setAmountSui call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [action, quotes]);
 
   const buildTx = () => {
     const amountMist = parseSui(amountSui);
@@ -231,6 +304,7 @@ export function Transact() {
                 // A new ID means the previous "manually picked" level no longer
                 // applies — re-enable auto-detect so we can refit the level.
                 setLevelTouched(false);
+                amountTouched.current = false;
               }}
             />
             <span className="hint">
@@ -298,14 +372,28 @@ export function Transact() {
               id="amt"
               inputMode="decimal"
               value={amountSui}
-              onChange={(e) => setAmountSui(e.target.value)}
+              onChange={(e) => {
+                setAmountSui(e.target.value);
+                amountTouched.current = true;
+              }}
             />
             <span className="hint">
-              {action === 'mark'
-                ? 'Mark fee. Anything above the on-chain minimum works.'
-                : action === 'bump'
-                  ? 'bump_price requires payment ≥ quote_bump_cost.'
-                  : 'buy_full requires payment ≥ current_price.'}
+              {quotes && action !== 'mark' ? (
+                <>
+                  auto-quoted from <code>trading::{action === 'bump' ? 'quote_bump_cost' : 'current_price'}</code>{' '}
+                  · base{' '}
+                  <strong>
+                    {formatSui(action === 'bump' ? quotes.bumpMist : quotes.buyMist, 6)} SUI
+                  </strong>
+                  {' '}+ 0.5% headroom
+                </>
+              ) : action === 'mark' ? (
+                'Mark fee. Anything above the on-chain minimum works.'
+              ) : action === 'bump' ? (
+                'bump_price requires payment ≥ quote_bump_cost.'
+              ) : (
+                'buy_full requires payment ≥ current_price.'
+              )}
             </span>
           </div>
           <div className="field">
@@ -319,7 +407,14 @@ export function Transact() {
               onChange={(e) => setSender(e.target.value)}
             />
             <span className="hint">
-              For owner-gated calls (bump / drop), use the parcel's actual owner.
+              {action === 'bump' ? (
+                <>
+                  <strong>Owner-gated.</strong> Paste the parcel's current owner address —
+                  any other sender aborts with <code>market::ENotOwner (3110)</code>.
+                </>
+              ) : (
+                <>For owner-gated calls (bump_price, drop_price), use the parcel's owner.</>
+              )}
             </span>
           </div>
         </div>
